@@ -389,14 +389,16 @@ class GPI_Apodizer(poppy.AnalyticOpticalElement):
     def __init__(self, name='H', satspots=True):
         super(GPI_Apodizer,self).__init__(planetype=poppy.poppy_core._PUPIL, name='GPI Apodizer '+name)
         import os
-        self._apodizer_path=os.path.abspath(os.path.dirname(__file__))
         self._apodname = name
         self._apod_params = self._apodizer_table[name]
         self._satspots=satspots
         if self._apodname != 'CLEAR':
             import astropy.io.ascii as asc
             from scipy.interpolate import interp1d
-            self._apod_profile = asc.read(os.path.join(self._apodizer_path, self._apod_params[0]+".txt"))
+            # Consider revising the following to use pkg_resources, but that may not matter
+            # http://stackoverflow.com/questions/5897666/how-do-i-use-data-in-package-data-from-source-code
+            my_path=os.path.abspath(os.path.dirname(__file__))
+            self._apod_profile = asc.read(os.path.join(my_path,"data", self._apod_params[0]+".txt"))
             # apodizer profiles are given in 10 micron steps on the apodizer
             self._apod_radius =  np.arange(len(self._apod_profile))*0.00001*self.magnification
             self._apod_interpolator = interp1d(self._apod_radius, self._apod_profile['transmission'],
