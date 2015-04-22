@@ -1,4 +1,6 @@
-Copyright (c) 2015, Gemini Planet Imager team
+Copyright (c) 2015, Gemini Planet Imager team and 
+Associated Universities for Research in Astronomy
+
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
