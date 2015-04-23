@@ -69,7 +69,7 @@ class GPI(poppy.Instrument):
     pixelscale=0.0141
 
 
-    def __init__(self, obsmode='H_coron', lyot_tabs=True, satspots=True, show_before=False):
+    def __init__(self, obsmode='H_coron', lyot_tabs=True, satspots=True, undersized_secondary=False, show_before=False):
         """  GPI PSF Simulator
 
         Parameters
@@ -89,6 +89,7 @@ class GPI(poppy.Instrument):
         self._lyot_tabs=lyot_tabs
         self._satspots=satspots
         self._show_before=show_before
+        self._undersized_secondary=undersized_secondary # use the (erroneous) value we used in GPI design
         self.obsmode = obsmode
 
     def _getFilterList(self):
@@ -239,7 +240,9 @@ class GPI(poppy.Instrument):
 
 
         #---- set pupil intensity
-        pupil_optic=GeminiPrimary()
+        pupil_optic=GeminiPrimary(undersized=self._undersized_secondary)
+        #if self._undersized_secondary:
+            #pupil_optic.obscuration_diameter = 1.02375 # SM outer diameter (vs inner hole projected diameter)
 
         #---- set pupil OPD
         if isinstance(self.pupilopd, str):  # simple filename
@@ -295,14 +298,18 @@ class GeminiPrimary(poppy.CompoundAnalyticOptic):
     support_angles = [90-43.10, 90+43.10, 270-43.10, 270+43.10]
     support_widths = [0.014,    0.01,     0.01,      0.01]   # laser vane is slightly thicker
     support_offset_y = [0.2179, -0.2179,  -0.2179,   0.2179]
-    def __init__(self):
+    def __init__(self, undersized=False):
         outer = poppy.CircularAperture(radius=self.primary_diameter/2)
         outer.pupil_diam = 8.0   # slightly oversized array
 
         # Secondary obscuration from pupil diagram provided by Gemini
 
+        sr = self.obscuration_diameter/2
+        if undersized:
+            sr = 1.02375/2 # SM outer diameter (vs inner hole projected diameter)
+
         obscuration = poppy.AsymmetricSecondaryObscuration(
-                            secondary_radius=self.obscuration_diameter/2,
+                            secondary_radius=sr,
                             support_angle=self.support_angles,
                             support_width=self.support_widths,
                             support_offset_y=self.support_offset_y)
@@ -388,6 +395,7 @@ class GPI_Apodizer(poppy.AnalyticOpticalElement):
 
     def __init__(self, name='H', satspots=True):
         super(GPI_Apodizer,self).__init__(planetype=poppy.poppy_core._PUPIL, name='GPI Apodizer '+name)
+        self.pupil_diam=8.0 # default size for display
         import os
         self._apodname = name
         self._apod_params = self._apodizer_table[name]
