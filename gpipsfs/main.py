@@ -1,6 +1,7 @@
 import poppy
 import numpy as np
 import astropy.io.fits as fits
+from . import dms
 
 
 _grayscale_pixels=4
@@ -69,7 +70,7 @@ class GPI(poppy.Instrument):
     pixelscale=0.0141
 
 
-    def __init__(self, obsmode='H_coron', lyot_tabs=True, satspots=True, undersized_secondary=False, show_before=False):
+    def __init__(self, obsmode='H_coron', lyot_tabs=True, satspots=True, undersized_secondary=False, show_before=False, dm=False):
         """  GPI PSF Simulator
 
         Parameters
@@ -89,8 +90,10 @@ class GPI(poppy.Instrument):
         self._lyot_tabs=lyot_tabs
         self._satspots=satspots
         self._show_before=show_before
+        self._dm=dm
         self._undersized_secondary=undersized_secondary # use the (erroneous) value we used in GPI design
         self.obsmode = obsmode
+        self.options['output_mode'] = 'detector'  # by default, always bin down to GPI actual pixels
 
     def _getFilterList(self):
         """ Return filter list and dummy placeholder for synphot bandpasses, 
@@ -260,6 +263,9 @@ class GPI(poppy.Instrument):
         #---- apply pupil intensity and OPD to the optical model
         optsys.addPupil(name='Gemini Primary', optic=pupil_optic, opd=full_opd_path, opdunits='micron', rotation=self._rotation)
 
+        if self._dm:
+            dm = dms.MEMS_DM()
+            optsys.addPupil(optic=dm)
 
 
         # GPI Apodizer
@@ -298,7 +304,7 @@ class GeminiPrimary(poppy.CompoundAnalyticOptic):
     support_angles = [90-43.10, 90+43.10, 270-43.10, 270+43.10]
     support_widths = [0.014,    0.01,     0.01,      0.01]   # laser vane is slightly thicker
     support_offset_y = [0.2179, -0.2179,  -0.2179,   0.2179]
-    def __init__(self, undersized=False):
+    def __init__(self,  name='Gemini South Primary', undersized=False):
         outer = poppy.CircularAperture(radius=self.primary_diameter/2)
         outer.pupil_diam = 8.0   # slightly oversized array
 
@@ -308,13 +314,14 @@ class GeminiPrimary(poppy.CompoundAnalyticOptic):
         if undersized:
             sr = 1.02375/2 # SM outer diameter (vs inner hole projected diameter)
 
+        # FIXME could antialias using same technique as used for apodizer grids
         obscuration = poppy.AsymmetricSecondaryObscuration(
                             secondary_radius=sr,
                             support_angle=self.support_angles,
                             support_width=self.support_widths,
                             support_offset_y=self.support_offset_y)
 
-        return super(GeminiPrimary,self).__init__(opticslist=[outer,obscuration], name='Gemini South Primary')
+        return super(GeminiPrimary,self).__init__(opticslist=[outer,obscuration], name=name)
 
 
 
@@ -367,8 +374,31 @@ class GPI_FPM(poppy.CircularOcculter):
 
         poppy.CircularOcculter.__init__(self, name='GPI FPM '+name, radius=radius*1e-3)
         self._default_display_size=2.7 # arcsec FOV for display
+        # FIXME could antialias using the same skimage code as used for the NRM mask?
 
-class GPI_Apodizer(poppy.AnalyticOpticalElement):
+
+def GPI_Apodizer(name='H', *args, **kwargs):
+    """ Factory function to return some suitable apodizer object 
+    
+    Parameters
+    ------------
+    name : string 
+        Name of apodizer, e.g. 'H' or 'NRM' or 'CLEAR_GPI'
+    satspots : bool
+        Include satspot grid? (only applies to some apodizers)
+    
+    
+    """
+
+    if name=='NRM':
+        return GPI_NRM(name=name, *args, **kwargs)
+    elif name=='CLEAR_GPI':
+        return GeminiPrimary(undersized=True, name='GPI Apodizer CLEAR_GPI', *args, **kwargs)
+    else:
+        return GPI_Coronagraphic_Apodizer(name=name, *args, **kwargs)
+
+
+class GPI_Coronagraphic_Apodizer(poppy.AnalyticOpticalElement):
     """ GPI Apodizer for APLC 
 
     Parameters based on 'APLC Final Design REV0.3.pdf' by Remi Soummer, 2008-12-03
@@ -393,14 +423,14 @@ class GPI_Apodizer(poppy.AnalyticOpticalElement):
             'NRM': ('GPI_K2_56_10', 7.5, 585),  # to be updated
             }
 
-    def __init__(self, name='H', satspots=True):
-        super(GPI_Apodizer,self).__init__(planetype=poppy.poppy_core._PUPIL, name='GPI Apodizer '+name)
+    def __init__(self, name='H', satspots=True, *args, **kwargs):
+        poppy.AnalyticOpticalElement.__init__(self,planetype=poppy.poppy_core._PUPIL, name='GPI Apodizer '+name)
         self.pupil_diam=8.0 # default size for display
         import os
         self._apodname = name
         self._apod_params = self._apodizer_table[name]
         self._satspots=satspots
-        if self._apodname != 'CLEAR':
+        if self._apodname != 'CLEAR' and self._apodname != 'CLEAR_GPI':
             import astropy.io.ascii as asc
             from scipy.interpolate import interp1d
             # Consider revising the following to use pkg_resources, but that may not matter
@@ -744,6 +774,84 @@ class GPI_LyotMask(poppy.AnalyticOpticalElement):
 #   080m12_06_03 -> 080m12_06_03
 #   080m12_07 -> 080m12_07
 #   080m12_10 -> 080m12_10
+
+
+class GPI_NRM(poppy.AnalyticOpticalElement):
+
+    # Mask geometry information copied from NRM_mask_definitions.py
+    # provided by Alex Greenbaum
+    hole_diam = 0.595806967827971
+    centers = [[-0.68712086181030,  2.514046357726287],
+              [-0.251922728788131,  3.362423670611769],
+              [1.8223921820303386,  0.157370753458909],
+              [2.3417804300716787, -0.644378188031338],
+              [-2.861816294382397, -1.733021136856143],
+              [-0.869101033505584, -3.287947799633272],
+              [-3.025663210535089,  1.567878988164694],
+              [2.6921408318053010,  1.854772995499249],
+              [3.2970144274045676, -0.595806967827971],
+              [1.0355384147357893, -3.192100591765294]]
+    rotdeg = 115.0
+
+    def __init__(self, *args, **kwargs):
+        #super(GPI_NRM,self).__init__(planetype=poppy.poppy_core._PUPIL, name='GPI NRM mask')
+        poppy.AnalyticOpticalElement.__init__(self,planetype=poppy.poppy_core._PUPIL, name='GPI NRM mask')
+        self.pupil_diam=8.0 # default size for display
+
+
+        try:
+            import skimage
+            self._antialias=True
+        except ImportError:
+            self._antialias=False
+
+
+    def _drawCircle(self, array, xind, yind, xcen, ycen, radius, value=1):
+        """ Draw a circle in an array, of a given radius centered at (ycen,xcen)
+        where the coordinates of the array indixes are (yind, xind)
+        """
+
+        if self._antialias:
+            # use anti-aliased circle
+            #  see http://scikit-image.org/docs/dev/auto_examples/plot_shapes.html#example-plot-shapes-py
+            from skimage.draw import circle_perimeter_aa
+            # assuming xind and yind are monotonic linear series,
+            # convert to pixel coords
+            pxscl = xind[0,1]-xind[0,0]
+            xpix = int(round((xcen-xind[0,0])/pxscl))
+            ypix = int(round((ycen-yind[0,0])/pxscl))
+            rad =  int(round(radius/pxscl))
+            rr,cc,val = circle_perimeter_aa(ypix,xpix,rad)
+            array[rr,cc] = val
+            # FIXME the above is imperfect because the method in skimage only works
+            # on integer coordinates. TBD to see if we care enough to do anything better than
+            # that.
+
+        r = np.sqrt((xind-xcen) ** 2 + (yind-ycen) ** 2)
+        array[r<radius]=value
+
+
+
+
+    def getPhasor(self, wave):
+        """ Compute the transmission inside/outside of the obscuration
+
+        """
+        if not isinstance(wave, poppy.Wavefront):  # pragma: no cover
+            raise ValueError("getPhasor must be called with a Wavefront to define the spacing")
+        assert (wave.planetype == poppy.poppy_core._PUPIL)
+
+        self.transmission = np.zeros(wave.shape)
+        y, x = wave.coordinates()
+
+        c, s = np.cos(np.deg2rad(self.rotdeg)), np.sin(np.deg2rad(self.rotdeg))
+
+        for coords in self.centers:
+            xrot = c*coords[0] - s*coords[1]
+            yrot = s*coords[0] + c*coords[1]
+            self._drawCircle(self.transmission, x, y, xrot, yrot, self.hole_diam/2)
+
+        return self.transmission
 
 
 
