@@ -612,7 +612,7 @@ class GPI_LyotMask(poppy.AnalyticOpticalElement):
             if k.upper()==name.upper():
                 cname=k
                 break
-        else:  
+        else:
             raise ValueError('Unknown Lyot stop name: '+name)
         params = self.lyot_table[cname]
 
@@ -637,6 +637,9 @@ class GPI_LyotMask(poppy.AnalyticOpticalElement):
         self.transmission = np.ones(wave.shape)
 
         y, x = wave.coordinates()
+
+        y *= -1 # Flip Y coordinate convention to match 
+                # Lyot bad actuator tabs to AOWFS display bad actuators
         r = np.sqrt(x ** 2 + y ** 2)  #* wave.pixelscale
 
         self.transmission[r < self.inner_radius] = 0
@@ -682,7 +685,6 @@ class GPI_LyotMask(poppy.AnalyticOpticalElement):
                 xp =  np.cos(angle) * xo + np.sin(angle) * yo
                 yp = -np.sin(angle) * xo + np.cos(angle) * yo
                 self.transmission[(xp > 0) & (xp < 0.5) & (np.abs(yp) < self.tabradius )] = 0
- 
 
         return self.transmission
 
