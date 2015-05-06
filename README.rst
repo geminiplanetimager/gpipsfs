@@ -14,6 +14,8 @@ Installation (the really simple way)
 ----------------------------------------
 
 Download the zip file and unzip
+
 cd to that folder
+
 python setup.py install
 
