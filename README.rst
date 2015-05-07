@@ -9,3 +9,13 @@ South.
 In lieu of more complete documentation, see
 http://nbviewer.ipython.org/github/geminiplanetimager/gpipsfs/blob/master/GPI%20PSFs%20Examples.ipynb
 
+
+Installation (the really simple way)
+----------------------------------------
+
+Download the zip file and unzip
+
+cd to that folder
+
+python setup.py install
+
