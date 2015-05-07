@@ -7,7 +7,7 @@ South.
 
 
 In lieu of more complete documentation, see
-http://nbviewer.ipython.org/github/geminiplanetimager/gpipsfs/blob/master/GPI%20PSFs%20Examples.ipynb
+http://nbviewer.ipython.org/github/geminiplanetimager/gpipsfs/blob/master/Getting%20Started%20with%20GPI%20PSFs.ipynb
 
 
 Installation (the really simple way)
