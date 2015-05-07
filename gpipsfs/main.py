@@ -166,7 +166,9 @@ class GPI(poppy.Instrument):
     @property
     def obsmode_list(self):
         "Available Observation Modes"
-        return self._obsmode_table.keys()
+        keys = self._obsmode_table.keys()
+        keys.sort()
+        return keys
 
     # Obsmode works differently since it's a meta-property that affects the other ones:
     @property
