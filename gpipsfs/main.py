@@ -70,7 +70,8 @@ class GPI(poppy.Instrument):
     pixelscale=0.0141
 
 
-    def __init__(self, obsmode='H_coron', lyot_tabs=True, satspots=True, undersized_secondary=False, show_before=False, dm=False):
+    def __init__(self, obsmode='H_coron', npix=1024, lyot_tabs=True, satspots=True, undersized_secondary=False, 
+            display_before=False, dm=False):
         """  GPI PSF Simulator
 
         Parameters
@@ -81,19 +82,22 @@ class GPI(poppy.Instrument):
             Block out the bad actuators with tabs in the Lyot masks? Default is True
         satspots : Bool
             Include the sat spots grid? Default is True
-        show_before : Bool
+        display_before : Bool
             Display the wavefront before the FPM and Lyot when using calcPSF(display=True)?
             This is mostly for pedagogical purposes. Default is False.
+        npix : int
+            Number of pixels to use across the pupil. Default is 1024.
         """
 
         super(GPI,self).__init__(name='GPI')
-        self._lyot_tabs=lyot_tabs
-        self._satspots=satspots
-        self._show_before=show_before
+        self.lyot_tabs=lyot_tabs
+        self.satspots=satspots
+        self._display_before=display_before
         self._dm=dm
         self._undersized_secondary=undersized_secondary # use the (erroneous) value we used in GPI design
         self.obsmode = obsmode
         self.options['output_mode'] = 'detector'  # by default, always bin down to GPI actual pixels
+        self.npix=npix
 
     def _getFilterList(self):
         """ Return filter list and dummy placeholder for synphot bandpasses, 
@@ -191,9 +195,35 @@ class GPI(poppy.Instrument):
 
 
 
-    def calcPSF(self, *args, **kwargs):
+    def calcPSF(self, wavelength=None, contrast_relative_to=None, verbose=False, *args, **kwargs):
+        """ Compute a PSF 
+
+        Has all the same options as poppy.Instrument.calcPSF plus a few more
+
+        Parameters
+        ----------------
+        nlambda : int
+            How many wavelengths to model for broadband? 
+            The default depends on how wide the filter is: (5,3,1) for types (W,M,N) respectively
+        monochromatic : float, optional
+            Setting this to a wavelength value (in meters) will compute a monochromatic PSF at that 
+            wavelength, overriding filter and nlambda settings.
+ 
+
+        """
         # Wrapper to slightly apply cosmetic adjustment to output plots
+
+        if verbose:
+            original_return_intermediates=kwargs.get('return_intermediates',False)
+            kwargs['return_intermediates'] = True
         retval = super(GPI,self).calcPSF(*args, **kwargs)
+
+        if verbose:
+            psf, intermediates = retval
+            for plane in intermediates:
+                print("{0:40s} total intensity = {1:.3g}".format(plane.location+",", plane.totalIntensity))
+            if not original_return_intermediates: retval = psf
+
         if kwargs.get('display', False):
             import matplotlib.pyplot as plt
             plt.gcf().suptitle("GPI, "+self.obsmode, size='xx-large')
@@ -241,6 +271,7 @@ class GPI(poppy.Instrument):
         if 'source_offset_r' in options.keys(): optsys.source_offset_r = options['source_offset_r']
         if 'source_offset_theta' in options.keys(): optsys.source_offset_theta = options['source_offset_theta']
 
+        optsys.npix = self.npix
 
         #---- set pupil intensity
         pupil_optic=GeminiPrimary(undersized=self._undersized_secondary)
@@ -269,19 +300,19 @@ class GPI(poppy.Instrument):
 
 
         # GPI Apodizer
-        apod = GPI_Apodizer(name=self.apodizer, satspots=self._satspots)
+        apod = GPI_Apodizer(name=self.apodizer, satspots=self.satspots)
         optsys.addPupil(optic=apod)
 
-        if self._show_before: optsys.addImage(optic=poppy.ScalarTransmission(name='Before FPM', transmission=1))
+        if self._display_before: optsys.addImage(optic=poppy.ScalarTransmission(name='Before FPM', transmission=1))
 
         # GPI FPM
         fpm = GPI_FPM(name=self.occulter)
         optsys.addImage(optic=fpm)
 
-        if self._show_before: optsys.addPupil(optic=poppy.ScalarTransmission(name='Before Lyot', transmission=1))
+        if self._display_before: optsys.addPupil(optic=poppy.ScalarTransmission(name='Before Lyot', transmission=1))
 
         # GPI Lyot Mask
-        lyot = GPI_LyotMask(name=self.lyotmask, tabs=self._lyot_tabs)
+        lyot = GPI_LyotMask(name=self.lyotmask, tabs=self.lyot_tabs)
         optsys.addPupil(optic=lyot)
 
         #--- add the detector element.
@@ -292,6 +323,7 @@ class GPI(poppy.Instrument):
                 if self.options['parity'].lower() == 'even' and np.remainder(fov_pixels,2)==1: fov_pixels +=1
 
         optsys.addDetector(self.pixelscale, fov_pixels = fov_pixels, oversample = detector_oversample, name=self.name+" lenslet array")
+
 
         return optsys
 
@@ -429,7 +461,7 @@ class GPI_Coronagraphic_Apodizer(poppy.AnalyticOpticalElement):
         import os
         self._apodname = name
         self._apod_params = self._apodizer_table[name]
-        self._satspots=satspots
+        self.satspots=satspots
         if self._apodname != 'CLEAR' and self._apodname != 'CLEAR_GPI':
             import astropy.io.ascii as asc
             from scipy.interpolate import interp1d
@@ -467,7 +499,7 @@ class GPI_Coronagraphic_Apodizer(poppy.AnalyticOpticalElement):
         self.transmission = self._apod_interpolator(r) 
 
         # Now draw the (thin!) sat spot lines
-        if self._satspots:
+        if self.satspots:
 
             width = self._apod_params[1]*1e-6*self.magnification
             offset = self._apod_params[2]*1e-6*self.magnification # perpendicular to line grid, so we need to correct by sqrt(2)
@@ -855,5 +887,55 @@ class GPI_NRM(poppy.AnalyticOpticalElement):
 
         return self.transmission
 
+
+# Here is a copy of the POPPY routine, added just so I can slightly change how the
+# npix is defined.  Once that functionality is merged into poppy this will be unnecessary
+def _patched_inputWavefront(self, wavelength=2e-6):
+    """Create a Wavefront object suitable for sending through a given optical system, based on
+    the size of the first optical plane, assumed to be a pupil.
+
+    If the first optical element is an Analytic pupil (i.e. has no pixel scale) then
+    an array of 1024x1024 will be created (not including oversampling).
+
+    Uses self.source_offset to assign an off-axis tilt, if requested.
+
+    Parameters
+    ----------
+    wavelength : float
+        Wavelength in meters
+
+    Returns
+    -------
+    wavefront : poppy.Wavefront instance
+        A wavefront appropriate for passing through this optical system.
+
+    """
+
+    if hasattr(self, 'npix'):
+        npix = int(self.npix)
+    else:
+        npix = self.planes[0].shape[0] if self.planes[0].shape is not None else 1024
+    diam = self.planes[0].pupil_diam if hasattr(self.planes[0], 'pupil_diam') else 8
+
+    inwave = poppy.Wavefront(wavelength=wavelength,
+            npix = npix,
+            diam = diam,
+            oversample=self.oversample)
+    poppy.poppy_core._log.debug("Creating input wavefront with wavelength=%f, npix=%d, pixel scale=%f meters/pixel" % (wavelength, npix, diam/npix))
+
+    if np.abs(self.source_offset_r) > 0:
+        offset_x = self.source_offset_r *-np.sin(self.source_offset_theta*np.pi/180)  # convert to offset X,Y in arcsec
+        offset_y = self.source_offset_r * np.cos(self.source_offset_theta*np.pi/180)  # using the usual astronomical angle convention
+        inwave.tilt(Xangle=offset_x, Yangle=offset_y)
+        poppy.poppy_core._log.debug("Tilted input wavefront by theta_X=%f, theta_Y=%f arcsec" % (offset_x, offset_y))
+    return inwave
+        # Monkey patch the class to allow defining a rescalable pupil based on this class's npix attribute
+        # FIXME this is a hack and should be removed once this functionality is merged into poppy master
+
+
+# Monkey patch the class to allow defining a rescalable pupil based on this class's npix attribute
+# FIXME this is a hack and should be removed once this functionality is merged into poppy master
+
+poppy.OpticalSystem.inputWavefront = _patched_inputWavefront
 
 
