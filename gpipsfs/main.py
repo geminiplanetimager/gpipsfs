@@ -46,7 +46,7 @@ class GPI(poppy.Instrument):
                         'J_coron':      ('J',  'J',     'J',       '080m12_04'),
                         'H_coron':      ('H',  'H',     'H',       '080m12_04'),
                         'K1_coron':     ('K1', 'K1',    'K1',      '080m12_06_03'),
-                        'K2_coron':     ('K2', 'K2',    'K2',      '080m12_07'),
+                        'K2_coron':     ('K2', 'K2',    'K1',      '080m12_07'),
                         'H_starcor':    ('H',  'Hstar', 'H',       '080m12_03'),
                         'H_LIWAcor':    ('H',  'HLIWA', 'K1',      '080m12_04'),
                         'Y_unblocked':  ('Y',  'Y',     'SCIENCE', '080m12_03'),
@@ -583,6 +583,7 @@ class GPI_LyotMask(poppy.AnalyticOpticalElement):
                                    (2.614, -3.977, 1),
                                    (-1.932,-1.250, 2),
                                    (1.023, -1.136, 0)]  # coupled to its neighbor, not fully broken
+            #Name           R_out  R_in   spider_width  ntabs   
     lyot_table = {
             'Blank':       (0,     0,     0,     0, 0 ),
             'Open':        (5.1,   0,     0,     0, 0 ),
