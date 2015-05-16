@@ -13,11 +13,14 @@ http://nbviewer.ipython.org/github/geminiplanetimager/gpipsfs/blob/master/Gettin
 Installation (the really simple way)
 ----------------------------------------
 
+We assume you already have python and ipython installed. Zip files are available from https://github.com/geminiplanetimager/gpipsfs; see link at right to 'Download ZIP'
 Download the zip file and unzip. And then::
 
     > cd to that folder
 
     > python setup.py install
+    
+    
 
 
 Getting Started
