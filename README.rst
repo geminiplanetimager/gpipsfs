@@ -51,7 +51,3 @@ Currently no wavefront error terms included.
 Cash prize available for the first person to find a sign error somewhere in this code. 
 
 To reiterate: This code provides a **toy model** of GPI intended primarily for understanding how the GPI coronagraph optics work; it is **not** an adaptive optics simulator, does not model wavefront errors, operates in a simplified optical approximation regime (Fraunhofer diffraction, not Fresnel), and is not intended to be a high fidelity model of GPI. 
-
-
-
-
