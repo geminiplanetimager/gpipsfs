@@ -1,7 +1,6 @@
 import poppy
 import numpy as np
 import astropy.io.fits as fits
-from . import dms
 
 
 _grayscale_pixels=4
@@ -67,11 +66,15 @@ class GPI(poppy.Instrument):
                         'DARK':         ('H',  'H',     'H',       'Blank')}
 
 
-    pixelscale=0.0141
+    pixelscale=0.0141  # IFS pixelscale
+    """IFS lenslet scale, in arcseconds"""
+
+    dms=False          # Include DMs?
+    """ Include Woofer and Tweeter surfaces in model? """
 
 
     def __init__(self, obsmode='H_coron', npix=1024, lyot_tabs=True, satspots=True, undersized_secondary=False, 
-            display_before=False, dm=False):
+            display_before=False, dms=False):
         """  GPI PSF Simulator
 
         Parameters
@@ -93,14 +96,16 @@ class GPI(poppy.Instrument):
         self.lyot_tabs=lyot_tabs
         self.satspots=satspots
         self._display_before=display_before
-        self._dm=dm
-        if dm:
-            self.tweeter=telemetry.GPITweeter()
-            self.woofer=telemetry.GPIWoofer()
+        self.dms=dms
         self._undersized_secondary=undersized_secondary # use the (erroneous) value we used in GPI design
         self.obsmode = obsmode
         self.options['output_mode'] = 'detector'  # by default, always bin down to GPI actual pixels
         self.npix=npix
+
+
+        from . import dms
+        self.tweeter = dms.GPITweeter()
+        self.woofer  = dms.GPIWoofer()
 
     def _getFilterList(self):
         """ Return filter list and dummy placeholder for synphot bandpasses, 
@@ -199,9 +204,8 @@ class GPI(poppy.Instrument):
         return 2.8
 
 
-
-    def calcPSF(self, wavelength=None, contrast_relative_to=None, verbose=False, *args, **kwargs):
-        """ Compute a PSF 
+    def calcPSF(self, wavelength=None, oversample=2, contrast_relative_to=None, verbose=False, *args, **kwargs):
+        """ Compute a PSF
 
         Has all the same options as poppy.Instrument.calcPSF plus a few more
 
@@ -213,16 +217,26 @@ class GPI(poppy.Instrument):
         monochromatic : float, optional
             Setting this to a wavelength value (in meters) will compute a monochromatic PSF at that 
             wavelength, overriding filter and nlambda settings.
- 
+        wavelength : float, optional
+            Synonym for `monochromatic`. 
 
         """
+
         # Wrapper to slightly apply cosmetic adjustment to output plots
 
         if verbose:
             original_return_intermediates=kwargs.get('return_intermediates',False)
             kwargs['return_intermediates'] = True
+
+
+        if wavelength is not None and 'monochromatic' not in kwargs: kwargs['monochromatic'] = wavelength
+        # we have adjusted above the default to 2, vs. the default=4 for poppy, so let's apply that.
+        kwargs['oversample'] = oversample
+
+        # The actual calculation:
         retval = super(GPI,self).calcPSF(*args, **kwargs)
 
+        # Output and display
         if verbose:
             psf, intermediates = retval
             for plane in intermediates:
@@ -299,10 +313,9 @@ class GPI(poppy.Instrument):
         #---- apply pupil intensity and OPD to the optical model
         optsys.addPupil(name='Gemini Primary', optic=pupil_optic, opd=full_opd_path, opdunits='micron', rotation=self._rotation)
 
-        if self._dm:
-            #dm = dms.MEMS_DM()
-            optsys.addPupil(optic=self.tweeter)
+        if self.dms:
             optsys.addPupil(optic=self.woofer)
+            optsys.addPupil(optic=self.tweeter)
 
 
         # GPI Apodizer
