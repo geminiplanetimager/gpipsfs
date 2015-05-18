@@ -94,6 +94,9 @@ class GPI(poppy.Instrument):
         self.satspots=satspots
         self._display_before=display_before
         self._dm=dm
+        if dm:
+            self.tweeter=telemetry.GPITweeter()
+            self.woofer=telemetry.GPIWoofer()
         self._undersized_secondary=undersized_secondary # use the (erroneous) value we used in GPI design
         self.obsmode = obsmode
         self.options['output_mode'] = 'detector'  # by default, always bin down to GPI actual pixels
@@ -297,8 +300,9 @@ class GPI(poppy.Instrument):
         optsys.addPupil(name='Gemini Primary', optic=pupil_optic, opd=full_opd_path, opdunits='micron', rotation=self._rotation)
 
         if self._dm:
-            dm = dms.MEMS_DM()
-            optsys.addPupil(optic=dm)
+            #dm = dms.MEMS_DM()
+            optsys.addPupil(optic=self.tweeter)
+            optsys.addPupil(optic=self.woofer)
 
 
         # GPI Apodizer
