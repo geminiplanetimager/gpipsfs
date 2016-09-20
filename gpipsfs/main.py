@@ -249,7 +249,7 @@ class GPI(poppy.Instrument):
             plt.gcf().suptitle("GPI, "+self.obsmode, size='xx-large')
         return retval
 
-    def _getOpticalSystem(self,fft_oversample=2, detector_oversample = None, fov_arcsec=2, fov_pixels=None, options=dict()):
+    def _getOpticalSystem(self,fft_oversample=2, detector_oversample = None, fov_arcsec=2.8, fov_pixels=None, options=dict()):
 
         """ Return an OpticalSystem instance corresponding to the instrument as currently configured.
 
@@ -493,7 +493,7 @@ class GPI_Coronagraphic_Apodizer(poppy.AnalyticOpticalElement):
             self._apod_radius =  np.arange(len(self._apod_profile))*0.00001*self.magnification
             self._apod_interpolator = interp1d(self._apod_radius, self._apod_profile['transmission'],
                     bounds_error=False, fill_value=0.0)
-
+        self.wavefront_display_hint ='intensity'
 
     def plot1d(self):
         import matplotlib.pyplot as plt
@@ -680,6 +680,7 @@ class GPI_LyotMask(poppy.AnalyticOpticalElement):
         if tabs==False: self.ntabs=0  # allow user to turn tabs off if desired
 
         self.wavefront_display_hint = 'intensity' # preferred display for wavefronts at this plane
+        self.wavefront_display_vmax_hint = 3e-9  # Hacky to hard code this, but this value works OK with H_coron sims.
 
     def get_transmission(self, wave):
         """ Compute the transmission inside/outside of the obscuration
