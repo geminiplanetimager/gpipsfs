@@ -425,7 +425,7 @@ class GPI_FPM(poppy.CircularOcculter):
             raise ValueError("No GPI FPM named "+name)
 
         poppy.CircularOcculter.__init__(self, name='GPI FPM '+name, radius=radius*1e-3)
-        self._default_display_size=2.7 # arcsec FOV for display
+        self._default_display_size=2.7*u.arcsec # arcsec FOV for display
         # FIXME could antialias using the same skimage code as used for the NRM mask?
 
 
@@ -506,13 +506,13 @@ class GPI_Coronagraphic_Apodizer(poppy.AnalyticOpticalElement):
 
         """
         if not isinstance(wave, poppy.Wavefront):  # pragma: no cover
-            raise ValueError("getPhasor must be called with a Wavefront to define the spacing")
+            raise ValueError("get_transmission must be called with a Wavefront to define the spacing")
         assert (wave.planetype == poppy.poppy_core._PUPIL)
 
         self.transmission = np.ones(wave.shape)
         if self._apodname=='CLEAR': return self.transmission
 
-        y, x = wave.coordinates()
+        y, x = self.get_coordinates(wave)
         r = np.sqrt(x ** 2 + y ** 2) 
 
         # Draw the radial component from the lookup table
@@ -681,7 +681,7 @@ class GPI_LyotMask(poppy.AnalyticOpticalElement):
 
         self.wavefront_display_hint = 'intensity' # preferred display for wavefronts at this plane
 
-    def getPhasor(self, wave):
+    def get_transmission(self, wave):
         """ Compute the transmission inside/outside of the obscuration
 
         Based on poppy.AsymmetricSecondaryObscuration but with the bad actuator tabs added.
@@ -692,7 +692,7 @@ class GPI_LyotMask(poppy.AnalyticOpticalElement):
 
         self.transmission = np.ones(wave.shape)
 
-        y, x = wave.coordinates()
+        y, x = self.get_coordinates(wave)
 
         y *= -1 # Flip Y coordinate convention to match 
                 # Lyot bad actuator tabs to AOWFS display bad actuators
@@ -891,12 +891,12 @@ class GPI_NRM(poppy.AnalyticOpticalElement):
 
 
 
-    def getPhasor(self, wave):
+    def get_transmission(self, wave):
         """ Compute the transmission inside/outside of the obscuration
 
         """
         if not isinstance(wave, poppy.Wavefront):  # pragma: no cover
-            raise ValueError("getPhasor must be called with a Wavefront to define the spacing")
+            raise ValueError("get must be called with a Wavefront to define the spacing")
         assert (wave.planetype == poppy.poppy_core._PUPIL)
 
         self.transmission = np.zeros(wave.shape)
