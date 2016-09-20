@@ -1,6 +1,7 @@
 import poppy
 import numpy as np
 import astropy.io.fits as fits
+import astropy.units as u
 
 
 _grayscale_pixels=4
@@ -357,7 +358,7 @@ class GeminiPrimary(poppy.CompoundAnalyticOptic):
     support_offset_y = [0.2179, -0.2179,  -0.2179,   0.2179]
     def __init__(self,  name='Gemini South Primary', undersized=False):
         outer = poppy.CircularAperture(radius=self.primary_diameter/2)
-        outer.pupil_diam = 8.0   # slightly oversized array
+        outer.pupil_diam = 8.0*u.meter   # slightly oversized array
 
         # Secondary obscuration from pupil diagram provided by Gemini
 
@@ -476,7 +477,7 @@ class GPI_Coronagraphic_Apodizer(poppy.AnalyticOpticalElement):
 
     def __init__(self, name='H', satspots=True, *args, **kwargs):
         poppy.AnalyticOpticalElement.__init__(self,planetype=poppy.poppy_core._PUPIL, name='GPI Apodizer '+name)
-        self.pupil_diam=8.0 # default size for display
+        self.pupil_diam=8.0*u.meter # default size for display
         import os
         self._apodname = name
         self._apod_params = self._apodizer_table[name]
@@ -500,7 +501,7 @@ class GPI_Coronagraphic_Apodizer(poppy.AnalyticOpticalElement):
         plt.xlabel('Radial separation at primary [m]')
         plt.ylabel('E field transmission')
 
-    def getPhasor(self, wave):
+    def get_transmission(self, wave):
         """ Compute the transmission inside/outside of the obscuration
 
         """
@@ -527,8 +528,9 @@ class GPI_Coronagraphic_Apodizer(poppy.AnalyticOpticalElement):
             nlines=11 # on each side of the origin
 
             for n in np.arange(nlines*2+1)-nlines:
-                self._draw_subpixel_antialiased_45deg_line(self.transmission, y, x, 1, xoffset*n, width, wave.pixelscale)
-                self._draw_subpixel_antialiased_45deg_line(self.transmission, y, x,-1, xoffset*n, width, wave.pixelscale)
+                pxscl = wave.pixelscale.to(u.meter/u.pixel).value
+                self._draw_subpixel_antialiased_45deg_line(self.transmission, y, x, 1, xoffset*n, width, pxscl)
+                self._draw_subpixel_antialiased_45deg_line(self.transmission, y, x,-1, xoffset*n, width, pxscl)
 
 
         return self.transmission
@@ -676,6 +678,8 @@ class GPI_LyotMask(poppy.AnalyticOpticalElement):
         self.tabradius= params[4]*1e-3*self.magnification
 
         if tabs==False: self.ntabs=0  # allow user to turn tabs off if desired
+
+        self.wavefront_display_hint = 'intensity' # preferred display for wavefronts at this plane
 
     def getPhasor(self, wave):
         """ Compute the transmission inside/outside of the obscuration
