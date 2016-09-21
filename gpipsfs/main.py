@@ -680,7 +680,7 @@ class GPI_LyotMask(poppy.AnalyticOpticalElement):
         if tabs==False: self.ntabs=0  # allow user to turn tabs off if desired
 
         self.wavefront_display_hint = 'intensity' # preferred display for wavefronts at this plane
-        self.wavefront_display_vmax_hint = 3e-9  # Hacky to hard code this, but this value works OK with H_coron sims.
+        #self.wavefront_display_vmax_hint = 3e-9  # Hacky to hard code this, but this value works OK with H_coron sims.
 
     def get_transmission(self, wave):
         """ Compute the transmission inside/outside of the obscuration

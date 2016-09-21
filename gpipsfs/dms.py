@@ -121,8 +121,8 @@ class DeformableMirror(poppy.AnalyticOpticalElement):
         return y_act, x_act
 
 
-    def getPhasor(self,wave):
-        """ Return the complex phasor for the optic.
+    def get_opd(self,wave):
+        """ Return the surface optical path delay for the optic.
         Interpolates from the current optic surface state onto the
         desired coordinates for the wave.
 
@@ -133,10 +133,11 @@ class DeformableMirror(poppy.AnalyticOpticalElement):
 
         # the following could be replaced with a higher fidelity model if needed
         interpolated_surface = self._get_surface_via_gaussian_influence_functions(wave)
+        return interpolated_surface
 
 
-        phasor = np.exp(1.j * 2 * np.pi * interpolated_surface/wave.wavelength)
-        return phasor
+        #phasor = np.exp(1.j * 2 * np.pi * interpolated_surface/wave.wavelength)
+        #return phasor
 
     def _get_surface_via_gaussian_influence_functions(self, wave):
         """ Infer a finely-sampled surface from simple Gaussian influence functions centered on
@@ -167,7 +168,7 @@ class DeformableMirror(poppy.AnalyticOpticalElement):
         return interpolated_surface
 
 
-    def display(self, annotate=False, grid=False, what='phase', crosshairs=False, *args, **kwargs):
+    def display(self, annotate=False, grid=False, what='opd', crosshairs=False, *args, **kwargs):
         """Display an Analytic optic by first computing it onto a grid.
 
         Parameters
@@ -304,15 +305,15 @@ class GPITweeter(DeformableMirror):
 
         return output
 
-    def getPhasor(self, wave):
-        phasor = DeformableMirror.getPhasor(self,wave)
+    def get_opd(self, wave):
+        opd = DeformableMirror.get_opd(self,wave)
 
         if self.mems_print_through:
-            mems_print_through_phasor= self._getPhasor_MEMS_print_through(wave)
-            phasor *= mems_print_through_phasor
-        return phasor
+            mems_print_through_opd = self._get_opd_MEMS_print_through(wave)
+            opd += mems_print_through_opd
+        return opd
 
-    def _getPhasor_MEMS_print_through(self,wave):
+    def _get_opd_MEMS_print_through(self,wave):
         """ DM surface print through """
 
         # GPI tweeter actuators are reimaged to 18 cm subapertures
@@ -335,7 +336,7 @@ class GPITweeter(DeformableMirror):
             raise ValueError("getPhasor must be called with a Wavefront to define the spacing")
         assert (wave.planetype == poppy.poppy_core._PUPIL)
 
-        opd = np.ones(wave.shape)
+        opd = np.zeros(wave.shape)
         y, x = wave.coordinates()
 
 
@@ -343,8 +344,9 @@ class GPITweeter(DeformableMirror):
         opd[np.mod(x,self.actuator_spacing) <= (self.actuator_spacing*pt_col_width)] += pt_row_value
         opd[np.mod(y,self.actuator_spacing) <= (self.actuator_spacing*pt_col_width)] += pt_col_value
 
-        phasor = np.exp(1.j * 2 * np.pi * opd/wave.wavelength)
-        return phasor
+        return opd
+        #phasor = np.exp(1.j * 2 * np.pi * opd/wave.wavelength)
+        #return phasor
 
     def annotate(self, markbad=True, badmarker='o', marker='+', **kwargs):
         # first plot all the normal ones
