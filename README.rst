@@ -9,13 +9,21 @@ This code provides a **toy model** of GPI intended primarily for understanding h
 
 
 In lieu of more complete documentation, see
-http://nbviewer.ipython.org/github/geminiplanetimager/gpipsfs/blob/master/Getting%20Started%20with%20GPI%20PSFs.ipynb
+http://nbviewer.ipython.org/github/geminiplanetimager/gpipsfs/blob/master/notebooks/Getting%20Started%20with%20GPI%20PSFs.ipynb
 
 
-Installation (the really simple way)
+Requirements & Installation
 ----------------------------------------
 
-We assume you already have python and ipython installed. Zip files are available from https://github.com/geminiplanetimager/gpipsfs; see link at right to 'Download ZIP'
+Prerequisites:
+ * numpy, scipy, matplotlib, etc.
+ * poppy (you may need a development version. Install from Github)
+
+
+
+
+To install gpipsfs, either clone this repo from Github, or
+Zip files are available from https://github.com/geminiplanetimager/gpipsfs. see link at right to 'Download ZIP'
 Download the zip file and unzip. And then::
 
     > cd to that folder
