@@ -20,7 +20,7 @@ def _grayscale_getphasor_decorator(getphasor):
             diam=wave.diam,
             oversample=wave.oversample)
 
-        oversampled_phasor = optic.getPhasor(oversampled_wave)
+        oversampled_phasor = optic.get_phasor(oversampled_wave)
 
         rebinned_phasor = poppy.utils.rebin_array(oversampled_wave, (_grayscale_pixels,_grayscale_pixels))
         return rebinned_phasor
@@ -87,7 +87,7 @@ class GPI(poppy.Instrument):
         satspots : Bool
             Include the sat spots grid? Default is True
         display_before : Bool
-            Display the wavefront before the FPM and Lyot when using calcPSF(display=True)?
+            Display the wavefront before the FPM and Lyot when using calc_psf(display=True)?
             This is mostly for pedagogical purposes. Default is False.
         npix : int
             Number of pixels to use across the pupil. Default is 1024.
@@ -108,14 +108,14 @@ class GPI(poppy.Instrument):
         self.tweeter = dms.GPITweeter()
         self.woofer  = dms.GPIWoofer()
 
-    def _getFilterList(self):
+    def _get_filter_list(self):
         """ Return filter list and dummy placeholder for synphot bandpasses, 
         in the manner expected by the poppy.Instrument class"""
 
         filter_list =   ['Y', 'J', 'H', 'K1', 'K2']
         return filter_list, None
 
-    def _getSynphotBandpass(self,filtername):
+    def _get_synphot_bandpass(self,filtername):
         """ Return a pysynphot.ObsBandpass object for the given desired band.
         For GPI this piggybacks off the filter copes inside the GPI DRP directory
         """
@@ -200,15 +200,15 @@ class GPI(poppy.Instrument):
         self.lyotmask=settings[3]
 
 
-    def _getDefaultFOV(self):
+    def _get_default_fov(self):
         """ return default FOV in arcseconds """
         return 2.8
 
 
-    def calcPSF(self, wavelength=None, oversample=2, contrast_relative_to=None, verbose=False, *args, **kwargs):
+    def calc_psf(self, wavelength=None, oversample=2, contrast_relative_to=None, verbose=False, *args, **kwargs):
         """ Compute a PSF
 
-        Has all the same options as poppy.Instrument.calcPSF plus a few more
+        Has all the same options as poppy.Instrument.calc_psf plus a few more
 
         Parameters
         ----------------
@@ -235,7 +235,7 @@ class GPI(poppy.Instrument):
         kwargs['oversample'] = oversample
 
         # The actual calculation:
-        retval = super(GPI,self).calcPSF(*args, **kwargs)
+        retval = super(GPI,self).calc_psf(*args, **kwargs)
 
         # Output and display
         if verbose:
@@ -249,7 +249,7 @@ class GPI(poppy.Instrument):
             plt.gcf().suptitle("GPI, "+self.obsmode, size='xx-large')
         return retval
 
-    def _getOpticalSystem(self,fft_oversample=2, detector_oversample = None, fov_arcsec=2.8, fov_pixels=None, options=dict()):
+    def _get_optical_system(self,fft_oversample=2, detector_oversample = None, fov_arcsec=2.8, fov_pixels=None, options=dict()):
 
         """ Return an OpticalSystem instance corresponding to the instrument as currently configured.
 
@@ -312,28 +312,28 @@ class GPI(poppy.Instrument):
             raise TypeError("Not sure what to do with a pupilopd of that type:"+str(type(self.pupilopd)))
 
         #---- apply pupil intensity and OPD to the optical model
-        optsys.addPupil(name='Gemini Primary', optic=pupil_optic, opd=full_opd_path, opdunits='micron', rotation=self._rotation)
+        optsys.add_pupil(name='Gemini Primary', optic=pupil_optic, opd=full_opd_path, opdunits='micron', rotation=self._rotation)
 
         if self.dms:
-            optsys.addPupil(optic=self.woofer)
-            optsys.addPupil(optic=self.tweeter)
+            optsys.add_pupil(optic=self.woofer)
+            optsys.add_pupil(optic=self.tweeter)
 
 
         # GPI Apodizer
         apod = GPI_Apodizer(name=self.apodizer, satspots=self.satspots)
-        optsys.addPupil(optic=apod)
+        optsys.add_pupil(optic=apod)
 
-        if self._display_before: optsys.addImage(optic=poppy.ScalarTransmission(name='Before FPM', transmission=1))
+        if self._display_before: optsys.add_image(optic=poppy.ScalarTransmission(name='Before FPM', transmission=1))
 
         # GPI FPM
         fpm = GPI_FPM(name=self.occulter)
-        optsys.addImage(optic=fpm)
+        optsys.add_image(optic=fpm)
 
-        if self._display_before: optsys.addPupil(optic=poppy.ScalarTransmission(name='Before Lyot', transmission=1))
+        if self._display_before: optsys.add_pupil(optic=poppy.ScalarTransmission(name='Before Lyot', transmission=1))
 
         # GPI Lyot Mask
         lyot = GPI_LyotMask(name=self.lyotmask, tabs=self.lyot_tabs)
-        optsys.addPupil(optic=lyot)
+        optsys.add_pupil(optic=lyot)
 
         #--- add the detector element.
         if fov_pixels is None:
@@ -342,7 +342,7 @@ class GPI(poppy.Instrument):
                 if self.options['parity'].lower() == 'odd'  and np.remainder(fov_pixels,2)==0: fov_pixels +=1
                 if self.options['parity'].lower() == 'even' and np.remainder(fov_pixels,2)==1: fov_pixels +=1
 
-        optsys.addDetector(self.pixelscale, fov_pixels = fov_pixels, oversample = detector_oversample, name=self.name+" lenslet array")
+        optsys.add_detector(self.pixelscale, fov_pixels = fov_pixels, oversample = detector_oversample, name=self.name+" lenslet array")
 
 
         return optsys
