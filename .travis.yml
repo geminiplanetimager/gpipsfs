@@ -20,7 +20,7 @@ env:
         # The following versions are the 'default' for tests, unless
         # overidden underneath. They are defined here in order to save having
         # to repeat them for all configurations.
-        - NUMPY_VERSION=1.11
+        - NUMPY_VERSION=stable
         - ASTROPY_VERSION=stable
         - POPPY_VERSION=development
         - CONDA_INSTALL='conda install --yes'
@@ -31,8 +31,8 @@ env:
 matrix:
     include:
         # Do a coverage test in Python 3.
-        - python: 3.5
-          env: SETUP_CMD='test --coverage'
+        #- python: 3.5
+        #  env: SETUP_CMD='test --coverage'
 
         # Try all supported Python versions with the latest NumPy
         # and other dependencies
@@ -100,7 +100,7 @@ after_success:
     # If coveralls.io is set up for this package, uncomment the line
     # below and replace "packagename" with the name of your package.
     # The coveragerc file may be customized as needed for your package.
-    - if [[ $SETUP_CMD == 'test --coverage' ]]; then coveralls --rcfile='webbpsf/tests/coveragerc'; fi
+    - if [[ $SETUP_CMD == 'test --coverage' ]]; then coveralls --rcfile='gpypsfs/tests/coveragerc'; fi
 
 notifications:
     email:
