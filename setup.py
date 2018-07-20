@@ -4,11 +4,15 @@
 from setuptools import setup, find_packages
 setup(
     name = "gpipsfs",
-    version = "0.1.0",
+    version = "0.2.0",
     packages = ["gpipsfs"],
-    install_requires=['numpy>=1.8.0', 'astropy>=1.0.0', 'poppy>=0.3.4'],
+    install_requires=['numpy>=1.10.0',
+        'astropy>=2.0.0',
+        'poppy>=0.7.0',
+        'matplotlib>=1.3.0',
+        'pysynphot>=0.9' ],
     package_data = {
-        'gpipsfs': ['data/*.txt'],
+        'gpipsfs': ['data/*.txt', 'data/*.fits'],
     },
     # metadata for upload to PyPI
     author = "Gemini Planet Imager Team",
