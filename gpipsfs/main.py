@@ -34,7 +34,7 @@ class GPI(poppy.Instrument):
     """ Class implementing GPI perfect PSF calculation """
 
 
-    apodizer_list = ['Y', 'J', 'H', 'K1', 'K2', 'CLEAR','CLEAR_GPI','NRM','H_LIWA','H_STAR']
+    apodizer_list = ['Y', 'J', 'H', 'K1', 'K2', 'CLEAR','CLEAR_GPI','NRM','H_LIWA','ND']
     occulter_list = ['Y', 'J', 'H', 'K1', 'SCIENCE']
     lyotmask_list = [ '080m12_02', '080m12_03', '080m12_04', '080m12_04_c', '080m12_06', 
                     '080m12_06_03', '080m12_07', '080m12_10', 'Open', 'Blank' ]
@@ -47,7 +47,7 @@ class GPI(poppy.Instrument):
                         'H_coron':      ('H',  'H',     'H',       '080m12_04'),
                         'K1_coron':     ('K1', 'K1',    'K1',      '080m12_06_03'),
                         'K2_coron':     ('K2', 'K2',    'K1',      '080m12_07'),
-                        'H_starcor':    ('H',  'Hstar', 'H',       '080m12_03'),
+                        'H_starcor':    ('H',  'Hstar', 'H',       '080m12_03'),   # no longer available. 
                         'H_LIWAcor':    ('H',  'HLIWA', 'K1',      '080m12_04'),
                         'Y_unblocked':  ('Y',  'Y',     'SCIENCE', '080m12_03'),
                         'J_unblocked':  ('J',  'J',     'SCIENCE', '080m12_04'),
