@@ -356,8 +356,10 @@ class GeminiPrimary(poppy.CompoundAnalyticOptic):
     support_angles = [90-43.10, 90+43.10, 270-43.10, 270+43.10]
     support_widths = [0.014,    0.01,     0.01,      0.01]   # laser vane is slightly thicker
     support_offset_y = [0.2179, -0.2179,  -0.2179,   0.2179]
+    _default_display_size = 8.0*u.meter   # choose reasonable size for display and sampling.
     def __init__(self,  name='Gemini South Primary', undersized=False):
         outer = poppy.CircularAperture(radius=self.primary_diameter/2)
+        outer._default_display_size = self._default_display_size
         outer.pupil_diam = 8.0*u.meter   # slightly oversized array
 
         # Secondary obscuration from pupil diagram provided by Gemini
