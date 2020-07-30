@@ -288,8 +288,20 @@ class GPI(poppy.Instrument):
 
         #poppy_core._log.debug("Oversample: %d  %d " % (fft_oversample, detector_oversample))
         optsys = poppy.OpticalSystem(name=self.name, oversample=fft_oversample)
-        if 'source_offset_r' in options.keys(): optsys.source_offset_r = options['source_offset_r']
-        if 'source_offset_theta' in options.keys(): optsys.source_offset_theta = options['source_offset_theta']
+
+        if 'source_offset_x' in options or 'source_offset_y' in options:
+            if 'source_offset_r' in options:
+                raise ValueError("Cannot set source offset using source_offset_x and source_offset_y" +
+                                 " at the same time as source_offset_r")
+            offx = options.get('source_offset_x', 0)
+            offy = options.get('source_offset_y', 0)
+            optsys.source_offset_r = np.sqrt(offx ** 2 + offy ** 2)
+            optsys.source_offset_theta = np.rad2deg(np.arctan2(-offx, offy))
+            poppy.poppy_core._log.debug("Source offset from X,Y = ({}, {}) is (r,theta) = {},{}".format(
+                offx, offy, optsys.source_offset_r, optsys.source_offset_theta))
+        else:
+            if 'source_offset_r' in options.keys(): optsys.source_offset_r = options['source_offset_r']
+            if 'source_offset_theta' in options.keys(): optsys.source_offset_theta = options['source_offset_theta']
 
         optsys.npix = self.npix
 
