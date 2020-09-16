@@ -2,9 +2,13 @@ import poppy
 import numpy as np
 import astropy.io.fits as fits
 import astropy.units as u
+import os
+import scipy
 
 
 _grayscale_pixels=4
+
+_default_pupil_array_size = 8*u.m  # Default size for pupil arrays. Round value slightly larger than actual primary diam
 
 def _grayscale_getphasor_decorator(getphasor):
     """ Decorator to add automatic resampling and greyscale pixels to
@@ -34,7 +38,7 @@ class GPI(poppy.Instrument):
     """ Class implementing GPI perfect PSF calculation """
 
 
-    apodizer_list = ['Y', 'J', 'H', 'K1', 'K2', 'CLEAR','CLEAR_GPI','NRM','H_LIWA','ND']
+    apodizer_list = ['Y', 'J', 'H', 'K1', 'K2', 'CLEAR','CLEAR_GPI','NRM','H_LIWA','ND', 'FROM_FILE']
     occulter_list = ['Y', 'J', 'H', 'K1', 'SCIENCE']
     lyotmask_list = [ '080m12_02', '080m12_03', '080m12_04', '080m12_04_c', '080m12_06', 
                     '080m12_06_03', '080m12_07', '080m12_10', 'Open', 'Blank' ]
@@ -75,7 +79,7 @@ class GPI(poppy.Instrument):
 
 
     def __init__(self, obsmode='H_coron', npix=1024, lyot_tabs=True, satspots=True, undersized_secondary=False, 
-            display_before=False, dms=False):
+            display_before=False, dms=False, custom_apodizer_path=None, force_symmetric_primary=False):
         """  GPI PSF Simulator
 
         Parameters
@@ -91,6 +95,10 @@ class GPI(poppy.Instrument):
             This is mostly for pedagogical purposes. Default is False.
         npix : int
             Number of pixels to use across the pupil. Default is 1024.
+        force_symmetric_primary : bool
+            If true, model the primary as precisely symmetric by treating all 4 struts as the same thickness.
+            The actual Gemini primary is very slightly asymmetric (one strut is 40% thicker than the rest). This is
+            often negligible and sometimes it is useful to have precisely symmetric values in the primary model.
         """
 
         super(GPI,self).__init__(name='GPI')
@@ -102,7 +110,12 @@ class GPI(poppy.Instrument):
         self.obsmode = obsmode
         self.options['output_mode'] = 'detector'  # by default, always bin down to GPI actual pixels
         self.npix=npix
+        self.force_symmetric_primary = force_symmetric_primary
+        self.include_fpm = True # easy way to switch FPM in/out of beam
 
+        self.custom_apodizer_path = custom_apodizer_path
+        if self.custom_apodizer_path is not None:
+            self.apodizer = 'FROM_FILE'
 
         from . import dms
         self.tweeter = dms.GPITweeter()
@@ -205,7 +218,7 @@ class GPI(poppy.Instrument):
         return 2.8
 
 
-    def calc_psf(self, wavelength=None, oversample=2, contrast_relative_to=None, verbose=False, *args, **kwargs):
+    def calc_psf(self, wavelength=None, oversample=2, verbose=False, *args, **kwargs):
         """ Compute a PSF
 
         Has all the same options as poppy.Instrument.calc_psf plus a few more
@@ -246,10 +259,10 @@ class GPI(poppy.Instrument):
 
         if kwargs.get('display', False):
             import matplotlib.pyplot as plt
-            plt.gcf().suptitle("GPI, "+self.obsmode, size='xx-large')
+            plt.gcf().suptitle("GPI, mode = "+self.obsmode, size='xx-large')
         return retval
 
-    def _get_optical_system(self,fft_oversample=2, detector_oversample = None, fov_arcsec=2.8, fov_pixels=None, options=dict()):
+    def get_optical_system(self,fft_oversample=2, detector_oversample = None, fov_arcsec=2.8, fov_pixels=None, options=dict()):
 
         """ Return an OpticalSystem instance corresponding to the instrument as currently configured.
 
@@ -287,7 +300,7 @@ class GPI(poppy.Instrument):
         if detector_oversample is None: detector_oversample = fft_oversample
 
         #poppy_core._log.debug("Oversample: %d  %d " % (fft_oversample, detector_oversample))
-        optsys = poppy.OpticalSystem(name=self.name, oversample=fft_oversample)
+        optsys = poppy.OpticalSystem(name=self.name, oversample=fft_oversample, pupil_diameter=_default_pupil_array_size)
 
         if 'source_offset_x' in options or 'source_offset_y' in options:
             if 'source_offset_r' in options:
@@ -306,25 +319,53 @@ class GPI(poppy.Instrument):
         optsys.npix = self.npix
 
         #---- set pupil intensity
-        pupil_optic=GeminiPrimary(undersized=self._undersized_secondary)
+        pupil_optic=GeminiPrimary(undersized=self._undersized_secondary, force_symmetric=self.force_symmetric_primary)
         #if self._undersized_secondary:
             #pupil_optic.obscuration_diameter = 1.02375 # SM outer diameter (vs inner hole projected diameter)
 
         #---- set pupil OPD
         if isinstance(self.pupilopd, str):  # simple filename
             full_opd_path = self.pupilopd if os.path.exists( self.pupilopd) else os.path.join(self._datapath, "OPD",self.pupilopd)
-        elif hasattr(self.pupilopd, '__getitem__') and isinstance(self.pupilopd[0], basestring): # tuple with filename and slice
-            full_opd_path =  (self.pupilopd[0] if os.path.exists( self.pupilopd[0]) else 
-                    os.path.join(self._datapath, "OPD",self.pupilopd[0]), self.pupilopd[1])
         elif isinstance(self.pupilopd, fits.HDUList): # OPD supplied as FITS HDUList object
             full_opd_path = self.pupilopd # not a path per se but this works correctly to pass it to poppy
         elif self.pupilopd is None:
             full_opd_path = None
+        elif isinstance(self.pupilopd, np.ndarray):
+            # Read the WFE directly from that array, and stick that together with the primary aperture
+            wfe = self.pupilopd.copy()
+
+            wfe -= wfe.mean()
+
+            pixscale_apod = optsys.pupil_diameter / (self.npix * u.pixel) # This is an assumption! True so far for GPI 2.0 mask files...
+
+            # If we aren't explicitly told the pixelscale for the WFE, we assume the provided array matches the
+            # Gemini entrance pupil size, because that's true for the GPI 2.0 AO sims
+            if hasattr(self, 'pixscale_aowfe'):
+                pixscale_aowfe =self.pixscale_aowfe
+            else:
+                pixscale_aowfe = GeminiPrimary.primary_diameter*u.m / (wfe.shape[0]*u.pixel)
+
+            # We want to resample and pad the provided WFE array to have consistent sampling with the apodizer array
+            scalefactor = (pixscale_aowfe / pixscale_apod).value
+            zoomed_aowfe = poppy.utils.pad_to_size(scipy.ndimage.zoom(wfe, scalefactor), (self.npix, self.npix))
+
+            full_opd_path = None # No path provided
         else:
             raise TypeError("Not sure what to do with a pupilopd of that type:"+str(type(self.pupilopd)))
 
         #---- apply pupil intensity and OPD to the optical model
-        optsys.add_pupil(name='Gemini Primary', optic=pupil_optic, opd=full_opd_path, opdunits='micron', rotation=self._rotation)
+        if full_opd_path is not None:
+
+            cube_slice = self.opd_slice if hasattr(self, 'opd_slice') else 0
+            opd_data = poppy.FITSOpticalElement(opd=full_opd_path, opd_index=cube_slice, planetype=poppy.poppy_core._PUPIL)
+
+            # Now combine both the amplitude and OPD terms into a single optical element model
+            sampled_primary = pupil_optic.sample(npix=self.npix, grid_size=GeminiPrimary._default_display_size)
+            pupil_optic = poppy.ArrayOpticalElement(opd=opd_data.opd, transmission=sampled_primary,
+                                                    pixelscale=opd_data.pixelscale, name='Gemini primary with WFE')
+
+
+        optsys.add_pupil(name='Gemini Primary', optic=pupil_optic, rotation=self._rotation)
 
         if self.dms:
             optsys.add_pupil(optic=self.woofer)
@@ -332,14 +373,17 @@ class GPI(poppy.Instrument):
 
 
         # GPI Apodizer
-        apod = GPI_Apodizer(name=self.apodizer, satspots=self.satspots)
+        apod = GPI_Apodizer(name=self.apodizer, satspots=self.satspots, apodizer_path=self.custom_apodizer_path)
         optsys.add_pupil(optic=apod)
+
 
         if self._display_before: optsys.add_image(optic=poppy.ScalarTransmission(name='Before FPM', transmission=1))
 
         # GPI FPM
-        fpm = GPI_FPM(name=self.occulter)
-        optsys.add_image(optic=fpm)
+        if self.include_fpm:
+            fpm = GPI_FPM(name=self.occulter)
+            optsys.add_image(optic=fpm)
+            fpm_index = len(optsys)-1
 
         if self._display_before: optsys.add_pupil(optic=poppy.ScalarTransmission(name='Before Lyot', transmission=1))
 
@@ -356,9 +400,15 @@ class GPI(poppy.Instrument):
 
         optsys.add_detector(self.pixelscale, fov_pixels = fov_pixels, oversample = detector_oversample, name=self.name+" lenslet array")
 
+        if self.include_fpm and not self._display_before:
+            # Recast optical system to use the special semianalytic propagation method, for higher performance and precision.
+            # (This is faster, but is incompatible with the pedagogical _display_before option)
+            occulter_box_halfsize = 0.35/2 # arcsec. Size of circumscribing box around all GPI FPMs
+            optsys = poppy.SemiAnalyticCoronagraph(optsys, fpm_index=fpm_index, occulter_box = occulter_box_halfsize)
 
         return optsys
 
+    _get_optical_system = get_optical_system # Alias for back compatibility
 
 
 
@@ -368,11 +418,19 @@ class GeminiPrimary(poppy.CompoundAnalyticOptic):
     support_angles = [90-43.10, 90+43.10, 270-43.10, 270+43.10]
     support_widths = [0.014,    0.01,     0.01,      0.01]   # laser vane is slightly thicker
     support_offset_y = [0.2179, -0.2179,  -0.2179,   0.2179]
-    _default_display_size = 8.0*u.meter   # choose reasonable size for display and sampling.
-    def __init__(self,  name='Gemini South Primary', undersized=False):
+    _default_display_size = _default_pupil_array_size   # choose reasonable size for display and sampling.
+    def __init__(self,  name='Gemini South Primary', undersized=False, force_symmetric=False):
+        """Gemini Primary
+
+        :param symmetric: if True, treat all 4 struts as identical. If False, model the fact that
+                one of the struts is slightly thicker due to the laser AO beam transfer optics.
+        """
+
+        self.force_symmetric = force_symmetric
+
         outer = poppy.CircularAperture(radius=self.primary_diameter/2)
         outer._default_display_size = self._default_display_size
-        outer.pupil_diam = 8.0*u.meter   # slightly oversized array
+        outer.pupil_diam = _default_pupil_array_size   # slightly oversized array
 
         # Secondary obscuration from pupil diagram provided by Gemini
 
@@ -380,11 +438,13 @@ class GeminiPrimary(poppy.CompoundAnalyticOptic):
         if undersized:
             sr = 1.02375/2 # SM outer diameter (vs inner hole projected diameter)
 
+        support_width = np.max(self.support_widths) if self.force_symmetric else self.support_widths
+
         # FIXME could antialias using same technique as used for apodizer grids
         obscuration = poppy.AsymmetricSecondaryObscuration(
                             secondary_radius=sr,
                             support_angle=self.support_angles,
-                            support_width=self.support_widths,
+                            support_width=support_width,
                             support_offset_y=self.support_offset_y)
 
         return super(GeminiPrimary,self).__init__(opticslist=[outer,obscuration], name=name)
@@ -434,16 +494,16 @@ class GPI_FPM(poppy.CircularOcculter):
 
     def __init__(self, name='H'):
         try:
-            radius = self.FPM_table[name.upper()]/2
+            self.radius = self.FPM_table[name.upper()]/2
         except:
             raise ValueError("No GPI FPM named "+name)
 
-        poppy.CircularOcculter.__init__(self, name='GPI FPM '+name, radius=radius*1e-3)
+        poppy.CircularOcculter.__init__(self, name='GPI FPM '+name, radius=self.radius*1e-3)
         self._default_display_size=2.7*u.arcsec # arcsec FOV for display
         # FIXME could antialias using the same skimage code as used for the NRM mask?
 
 
-def GPI_Apodizer(name='H', *args, **kwargs):
+def GPI_Apodizer(name='H', apodizer_path=None, *args, **kwargs):
     """ Factory function to return some suitable apodizer object 
     
     Parameters
@@ -460,6 +520,8 @@ def GPI_Apodizer(name='H', *args, **kwargs):
         return GPI_NRM(name=name, *args, **kwargs)
     elif name=='CLEAR_GPI':
         return GeminiPrimary(undersized=True, name='GPI Apodizer CLEAR_GPI', *args, **kwargs)
+    elif name=='FROM_FILE':
+        return OptimizedGPIApodizer(apodizer_path)
     else:
         return GPI_Coronagraphic_Apodizer(name=name, *args, **kwargs)
 
@@ -491,7 +553,7 @@ class GPI_Coronagraphic_Apodizer(poppy.AnalyticOpticalElement):
 
     def __init__(self, name='H', satspots=True, *args, **kwargs):
         poppy.AnalyticOpticalElement.__init__(self,planetype=poppy.poppy_core._PUPIL, name='GPI Apodizer '+name)
-        self.pupil_diam=8.0*u.meter # default size for display
+        self.pupil_diam=_default_pupil_array_size # default size for display
         import os
         self._apodname = name
         self._apod_params = self._apodizer_table[name]
@@ -667,7 +729,7 @@ class GPI_LyotMask(poppy.AnalyticOpticalElement):
 
 
         super(GPI_LyotMask,self).__init__(planetype=poppy.poppy_core._PUPIL, name='GPI Lyot '+name)
-        self.pupil_diam=8.0 # default size for display
+        self.pupil_diam=_default_pupil_array_size # default size for display
         # Read in some geometry info from the primary mirror class
         self.support_angles=GeminiPrimary.support_angles
         self.support_offset_y = GeminiPrimary.support_offset_y
@@ -869,7 +931,7 @@ class GPI_NRM(poppy.AnalyticOpticalElement):
     def __init__(self, *args, **kwargs):
         #super(GPI_NRM,self).__init__(planetype=poppy.poppy_core._PUPIL, name='GPI NRM mask')
         poppy.AnalyticOpticalElement.__init__(self,planetype=poppy.poppy_core._PUPIL, name='GPI NRM mask')
-        self.pupil_diam=8.0 # default size for display
+        self.pupil_diam=_default_pupil_array_size # default size for display
 
 
         try:
@@ -927,3 +989,19 @@ class GPI_NRM(poppy.AnalyticOpticalElement):
         return self.transmission
 
 
+class OptimizedGPIApodizer(poppy.FITSOpticalElement):
+    """ Interface for loading a numerically optimized APLC mask
+    for instance produced by spacetelescope/aplc-optimization
+
+    """
+    def __init__(self, filename=None):
+        self.filename = filename
+        hd = fits.getheader(filename)
+        self.npix = hd['NAXIS1']
+
+        # The primary is computed on an array that is 8 meters across; see pupil_diam in GeminiPrimary above
+        # This isn't written into the fits headers now by aplc-optimization but we can reconstruct the value.
+        pixscale = _default_pupil_array_size.to_value(u.m) / self.npix
+
+        super().__init__(name=os.path.basename(filename), transmission=filename, pixelscale=pixscale)
+        self.wavefront_display_hint='intensity'
