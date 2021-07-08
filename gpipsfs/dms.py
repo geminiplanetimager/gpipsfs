@@ -5,7 +5,7 @@ import os
 import poppy
 
 from .main import GeminiPrimary
-
+my_path = os.path.abspath(os.path.dirname(__file__))
 # Classes for dealing with AO Telemetry sets
 
 class GPI_Globals(object):
@@ -32,10 +32,14 @@ class DeformableMirror(poppy.AnalyticOpticalElement):
         self.numacross = shape[0]           # number of actuators across diameter of
                                             # the optic's cleared aperture (may be
                                             # less than full diameter of array)
-        self.actuator_spacing = 1.0/self.numacross  # distance between actuators,
+        #self.actuator_spacing = 1.0/self.numacross  # distance between actuators,
                                                     # projected onto the primary
         self.pupil_center = (shape[0]-1.)/2 # center of clear aperture in actuator units
                                             # (may be offset from center of DM)
+    
+    @property
+    def actuator_spacing(self):
+        return  self.pupil_diam/self.numacross
     @property
     def shape(self):
         return self._shape
@@ -154,7 +158,7 @@ class DeformableMirror(poppy.AnalyticOpticalElement):
         sigma = self.actuator_spacing/np.sqrt((-np.log(crosstalk)))
 
         pixelscale = x[0,1]-x[0,0]          # scale of x,y
-        boxsize =  (3*sigma)/pixelscale     # half size for subarray
+        boxsize =  (3*sigma)/pixelscale     # half size for subarray (THIS IS NOT USED? --douglase)
 
         for yi, yc in enumerate(y_act):
             for xi, xc in enumerate(x_act):
@@ -163,7 +167,7 @@ class DeformableMirror(poppy.AnalyticOpticalElement):
                 # 2d Gaussian
                 r = ((x - xc)**2 + (y-yc)**2)/sigma**2
 
-                interpolated_surface +=  self._surface[yi,xi] * np.exp(-r)
+                interpolated_surface +=  np.nan_to_num(self._surface[yi,xi]) * np.exp(-r) #*np.sqrt(np.pi)
 
         return interpolated_surface
 
@@ -270,6 +274,107 @@ class DeformableMirror(poppy.AnalyticOpticalElement):
         for y in y_act:
             plt.axhline(y+ (self.actuator_spacing/2), linestyle=linestyle, color=color)
 
+class ContinuousMEMS(DeformableMirror):
+    def __init__(self,
+                 name="ContinuousMEMS",
+                 pupil_diam=8.6,
+                 numacross=None,
+                 mems_print_through_m=15e-9,#amplitude, 15 nm, estimated from http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.513.4649&rep=rep1&type=pdf
+                 actuator_map_file= os.path.join(my_path, 'data','GPI_tweeter_actuators.fits'),
+                 **kwargs
+                 ):
+        DeformableMirror.__init__(self, **kwargs)
+        if mems_print_through_m != 0.0:
+            self.mems_print_through = True
+            self._mems_print_through_amplitude = mems_print_through_m
+        else:
+            self.mems_print_through = False
+        self.name = name
+        self.pupil_diam = pupil_diam   # for display, projected full area around 48x48 subaps of tweeter
+        if numacross is None:
+            self.numacross = self.shape[0]
+        else:
+            self.numacross = numacross
+
+        self._actuator_type_info = fits.open(actuator_map_file)
+
+    @property
+    def bad_actuators(self):
+        """Returns a list of coordinate indices for the actuators which are
+        nonoperable """
+        act_map = self._actuator_type_info
+        wflagged = np.where(  ( act_map[0].data == act_map[0].header['DEAD']) |
+                              ( act_map[0].data == act_map[0].header['WEAK']) )
+
+        output = []
+        for i in range(len(wflagged[0])):
+            yc,xc = wflagged[0][i], wflagged[1][i]
+
+            label = 'DEAD' if (act_map[0].data[yc,xc] == act_map[0].header['DEAD'] ) else 'WEAK'
+            output.append([xc,yc,label])
+
+        return output
+
+    def get_opd(self, wave):
+        opd = DeformableMirror.get_opd(self,wave)
+
+        if self.mems_print_through:
+            mems_print_through_opd = self._get_opd_MEMS_print_through(wave)
+            opd += mems_print_through_opd
+        return opd
+
+    def _get_opd_MEMS_print_through(self,wave):
+        """ DM surface print through """
+
+        # GPI tweeter actuators are reimaged to 18 cm subapertures
+
+        # Boston DM print through info in:
+        #  http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.513.4649&rep=rep1&type=pdf
+        #  ao4elt.lesia.obspm.fr/sites/ao4elt/IMG/ppt/Bifano.ppt
+
+        # in horizontal direction, the print through is about 35/190 pixels = 18% of the width
+        # in the vertical direction, closer to 31%, but it's more like 2 narrow bars each 10% wide
+        # and there's a 10% wide dot in the middle of it too
+        #printthrough properties:
+        pt_col_width = 0.18
+        # 15 nm, estimated from http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.513.4649&rep=rep1&type=pdf
+        pt_col_value = self._mems_print_through_amplitude
+        pt_row_width = 0.10
+        pt_row_value = -1 * self._mems_print_through_amplitude
+
+        if not isinstance(wave, poppy.Wavefront):  # pragma: no cover
+            raise ValueError("getPhasor must be called with a Wavefront to define the spacing")
+        assert (wave.planetype == poppy.poppy_core._PUPIL)
+
+        opd = np.zeros(wave.shape)
+        y, x = wave.coordinates()
+
+
+        pixscale = x[0,1] - x[0,0]
+        opd[np.mod(x,self.actuator_spacing) <= (self.actuator_spacing*pt_col_width)] += pt_row_value
+        opd[np.mod(y,self.actuator_spacing) <= (self.actuator_spacing*pt_col_width)] += pt_col_value
+
+        return opd
+        #phasor = np.exp(1.j * 2 * np.pi * opd/wave.wavelength)
+        #return phasor
+
+    def annotate(self, markbad=True, badmarker='o', marker='+', **kwargs):
+        # first plot all the normal ones
+        DeformableMirror.annotate(self, marker=marker, **kwargs)
+
+        if markbad:
+            # now the less-than-good ones
+            yc, xc = self.get_coordinates()
+            ax = plt.gca()
+            autoscale_state = (ax._autoscaleXon, ax._autoscaleYon)
+            ax.autoscale(False)
+            act_map = self._actuator_type_info
+            for act_type, color in zip(['DEAD', 'COUPLED', 'WEAK','VARIABLE'],
+                                ['red',  'orange', 'brown', 'magenta']):
+                wflagged = np.where(act_map[0].data == act_map[0].header[act_type])
+                plt.scatter(xc[wflagged], yc[wflagged], marker=badmarker, color=color)
+            ax._autoscaleXon, ax._autoscaleYon = autoscale_state
+
 
 
 class GPITweeter(DeformableMirror):
@@ -277,7 +382,7 @@ class GPITweeter(DeformableMirror):
         DeformableMirror.__init__(self, shape=(GPI_Globals.gpi_tweet_n, GPI_Globals.gpi_tweet_n))
         self.name = "GPI Tweeter"
         self.numacross = GPI_Globals.gpi_numacross
-        self.actuator_spacing = GPI_Globals.gpi_tweet_spacing
+        #self.actuator_spacing = GPI_Globals.gpi_tweet_spacing
         self.pupil_center = GPI_Globals.pupil_center_tweeter
         self.pupil_diam = GPI_Globals.gpi_tweet_n*GPI_Globals.gpi_tweet_spacing   # for display, projected full area around 48x48 subaps
 
@@ -372,7 +477,7 @@ class GPIWoofer(DeformableMirror):
         self.name = "GPI Woofer"
         self.pupil_diam = 8.6   # for display, projected full area around 48x48 subaps of tweeter
         self.numacross = GPI_Globals.gpi_numacross
-        self.actuator_spacing = GPI_Globals.gpi_woof_spacing
+        #self.actuator_spacing = GPI_Globals.gpi_woof_spacing
         self.pupil_center = GPI_Globals.pupil_center_woofer
 
     def annotate(self, marker='s', color='teal', s=50, alpha=0.4, **kwargs):
